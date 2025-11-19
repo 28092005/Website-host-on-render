@@ -7,16 +7,17 @@ const validateSignup = [
     .withMessage('Username must be between 3 and 30 characters')
     .matches(/^[a-zA-Z0-9_]+$/)
     .withMessage('Username can only contain letters, numbers, and underscores'),
-  
+
   body('email')
+    .trim()
     .isEmail()
-    .normalizeEmail()
-    .withMessage('Please provide a valid email'),
-  
+    .withMessage('Please provide a valid email')
+    .normalizeEmail(),
+
   body('password')
     .isLength({ min: 6 })
     .withMessage('Password must be at least 6 characters long'),
-  
+
   body('confirm')
     .custom((value, { req }) => {
       if (value !== req.body.password) {
@@ -28,10 +29,11 @@ const validateSignup = [
 
 const validateLogin = [
   body('email')
+    .trim()
     .isEmail()
-    .normalizeEmail()
-    .withMessage('Please provide a valid email'),
-  
+    .withMessage('Please provide a valid email')
+    .normalizeEmail(),
+
   body('password')
     .notEmpty()
     .withMessage('Password is required')
@@ -39,13 +41,16 @@ const validateLogin = [
 
 const handleValidationErrors = (req, res, next) => {
   const errors = validationResult(req);
+
   if (!errors.isEmpty()) {
-    const errorMessages = errors.array().map(error => error.msg);
+    const messages = errors.array().map(err => err.msg);
+
     return res.status(400).render('error', { 
-      message: errorMessages.join(', '),
-      backUrl: req.get('Referer') || '/'
+      message: messages.join(', '),
+      backUrl: req.originalUrl || '/'
     });
   }
+
   next();
 };
 

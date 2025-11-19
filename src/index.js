@@ -13,208 +13,198 @@ const { validateSignup, validateLogin, handleValidationErrors } = require('./mid
 
 const app = express();
 
-// Add health check route first
+/* ----------------------------- HEALTH CHECK ----------------------------- */
 app.get('/health', (req, res) => {
-  res.status(200).json({ 
-    status: 'OK', 
+  res.status(200).json({
+    status: "OK",
     timestamp: new Date().toISOString(),
-    env: process.env.NODE_ENV || 'development'
   });
 });
 
+/* ------------------------------ DATABASE ------------------------------ */
 connectDB();
 
-// Security middleware
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'"],
-      imgSrc: ["'self'", "data:", "https:"]
-    }
-  }
-}));
+/* ----------------------------- SECURITY ----------------------------- */
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+  })
+);
 
-app.use(cors({
-  origin: process.env.NODE_ENV === 'production' ? true : 'http://localhost:3000',
-  credentials: true
-}));
+/* ----------------------------- CORS ----------------------------- */
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+  })
+);
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.'
-});
-app.use(limiter);
+/* ----------------------------- RATE LIMITS ----------------------------- */
+app.use(
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+  })
+);
 
-// Auth rate limiting
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
-  message: 'Too many authentication attempts, please try again later.'
 });
 
-// Session configuration
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'fallback-secret-change-this',
-  resave: false,
-  saveUninitialized: false,
-  store: MongoStore.create({
-    mongoUrl: process.env.MONGODB_URI || 'mongodb://localhost:27017/mini_project'
-  }),
-  cookie: {
-    secure: process.env.NODE_ENV === 'production',
-    httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
-  }
-}));
+/* ----------------------------- SESSION ----------------------------- */
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    store: MongoStore.create({
+      mongoUrl: process.env.MONGODB_URI,
+      ttl: 14 * 24 * 60 * 60, // 14 days
+    }),
+    cookie: {
+      secure: process.env.NODE_ENV === "production",
+      httpOnly: true,
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      maxAge: 24 * 60 * 60 * 1000,
+    },
+  })
+);
 
-// Body parsing middleware
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-app.use(express.json({ limit: '10mb' }));
+/* ----------------------------- CORE MIDDLEWARE ----------------------------- */
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
 app.use(express.static(path.join(__dirname, "../public")));
+
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "../views"));
 
-// Trust proxy for Render deployment
-if (process.env.NODE_ENV === 'production') {
-  app.set('trust proxy', 1);
+/* ----------------------------- TRUST PROXY (REQUIRED BY RENDER) ----------------------------- */
+if (process.env.NODE_ENV === "production") {
+  app.set("trust proxy", 1);
 }
 
-// Authentication middleware
+/* ----------------------------- AUTH MIDDLEWARE ----------------------------- */
 const requireAuth = (req, res, next) => {
-  if (req.session && req.session.userId) {
-    return next();
-  }
-  res.redirect('/');
+  if (req.session?.userId) return next();
+  res.redirect("/");
 };
 
-// Routes
+/* ----------------------------- ROUTES ----------------------------- */
+
+// LOGIN PAGE
 app.get("/", (req, res) => {
-  if (req.session && req.session.userId) {
-    return res.redirect('/home');
-  }
+  if (req.session?.userId) return res.redirect("/home");
   res.render("login");
 });
 
+// SIGNUP PAGE
 app.get("/signup", (req, res) => {
-  if (req.session && req.session.userId) {
-    return res.redirect('/home');
-  }
+  if (req.session?.userId) return res.redirect("/home");
   res.render("signup");
 });
 
+// HOME (PROTECTED)
 app.get("/home", requireAuth, async (req, res) => {
   try {
-    const user = await User.findById(req.session.userId).select('username');
+    const user = await User.findById(req.session.userId).select("username");
     if (!user) {
       req.session.destroy();
-      return res.redirect('/');
+      return res.redirect("/");
     }
+
     res.render("home", { username: user.username });
   } catch (error) {
-    console.error('Home route error:', error.message);
-    res.status(500).render('error', { 
-      message: 'Server error occurred',
-      backUrl: '/'
+    console.error("Home route error:", error);
+    res.status(500).render("error", {
+      message: "Server error occurred",
+      backUrl: "/",
     });
   }
 });
 
+// SIGNUP
 app.post("/signup", authLimiter, validateSignup, handleValidationErrors, async (req, res) => {
   try {
     const { username, email, password } = req.body;
 
-    // Check for existing user
-    const existingUser = await User.findOne({ 
-      $or: [{ email }, { username }] 
+    const existing = await User.findOne({
+      $or: [{ username }, { email }],
     });
-    
-    if (existingUser) {
-      return res.status(400).render('error', {
-        message: 'Email or username already registered',
-        backUrl: '/signup'
+
+    if (existing) {
+      return res.status(400).render("error", {
+        message: "Email or username already registered",
+        backUrl: "/signup",
       });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 12);
-    const newUser = new User({ username, email, password: hashedPassword });
-    await newUser.save();
+    const hashed = await bcrypt.hash(password, 12);
+
+    await new User({
+      username,
+      email,
+      password: hashed,
+    }).save();
 
     res.redirect("/");
   } catch (error) {
-    console.error('Signup error:', error.message);
-    res.status(500).render('error', {
-      message: 'Registration failed. Please try again.',
-      backUrl: '/signup'
+    console.error("Signup error:", error);
+    res.status(500).render("error", {
+      message: "Registration failed. Try again.",
+      backUrl: "/signup",
     });
   }
 });
 
+// LOGIN
 app.post("/login", authLimiter, validateLogin, handleValidationErrors, async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const user = await User.findOne({ email }).select('+password');
+    const user = await User.findOne({ email }).select("+password");
     if (!user) {
-      return res.status(401).render('error', {
-        message: 'Invalid email or password',
-        backUrl: '/'
+      return res.status(401).render("error", {
+        message: "Invalid email or password",
+        backUrl: "/",
       });
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(401).render('error', {
-        message: 'Invalid email or password',
-        backUrl: '/'
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) {
+      return res.status(401).render("error", {
+        message: "Invalid email or password",
+        backUrl: "/",
       });
     }
 
-    // Create session
     req.session.userId = user._id;
-    res.redirect('/home');
+
+    res.redirect("/home");
   } catch (error) {
-    console.error('Login error:', error.message);
-    res.status(500).render('error', {
-      message: 'Login failed. Please try again.',
-      backUrl: '/'
+    console.error("Login error:", error);
+    res.status(500).render("error", {
+      message: "Login failed. Try again.",
+      backUrl: "/",
     });
   }
 });
 
-app.post('/logout', requireAuth, (req, res) => {
-  req.session.destroy((err) => {
-    if (err) {
-      console.error('Logout error:', err.message);
-    }
-    res.redirect('/');
+// LOGOUT
+app.post("/logout", requireAuth, (req, res) => {
+  req.session.destroy(() => {
+    res.redirect("/");
   });
 });
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err.message);
-  res.status(500).render('error', {
-    message: 'Something went wrong. Please try again.',
-    backUrl: '/'
-  });
-});
-
-// 404 handler
+/* ----------------------------- 404 ----------------------------- */
 app.use((req, res) => {
-  res.status(404).render('error', {
-    message: 'Page not found',
-    backUrl: '/'
+  res.status(404).render("error", {
+    message: "Page not found",
+    backUrl: "/",
   });
 });
 
+/* ----------------------------- START SERVER ----------------------------- */
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`MongoDB URI configured: ${process.env.MONGODB_URI ? 'Yes' : 'No (using localhost)'}`);
-  console.log(`Session secret configured: ${process.env.SESSION_SECRET ? 'Yes' : 'No (using fallback)'}`);
-});
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
