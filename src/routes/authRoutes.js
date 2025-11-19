@@ -1,8 +1,9 @@
+// This routes file is no longer used - routes are handled in main index.js
+// Keeping file for potential future modular routing
+
 const express = require('express');
 const router = express.Router();
-const { loginUser } = require('../controllers/authController');
 
-// ✅ Login route
-router.post('/login', loginUser);
+// Future API routes can be added here
 
 module.exports = router;

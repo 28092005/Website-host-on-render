@@ -4,17 +4,29 @@
   "description": "",
   "main": "src/index.js",
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "dev": "node src/index.js",
+    "build": "echo 'No build step required'"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "dependencies": {
     "bcryptjs": "^3.0.2",
     "ejs": "^3.1.10",
     "express": "^5.1.0",
-    "mongoose": "^8.19.2"
+    "mongoose": "^8.19.2",
+    "dotenv": "^16.4.5",
+    "helmet": "^7.1.0",
+    "express-rate-limit": "^7.1.5",
+    "express-validator": "^7.0.1",
+    "express-session": "^1.18.0",
+    "connect-mongo": "^5.1.0",
+    "cors": "^2.8.5"
   }
 }
 
