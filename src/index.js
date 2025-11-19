@@ -12,6 +12,16 @@ const User = require("./models/User");
 const { validateSignup, validateLogin, handleValidationErrors } = require('./middleware/validation');
 
 const app = express();
+
+// Add health check route first
+app.get('/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    env: process.env.NODE_ENV || 'development'
+  });
+});
+
 connectDB();
 
 // Security middleware
@@ -27,7 +37,7 @@ app.use(helmet({
 }));
 
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' ? false : 'http://localhost:3000',
+  origin: process.env.NODE_ENV === 'production' ? true : 'http://localhost:3000',
   credentials: true
 }));
 
@@ -205,4 +215,6 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`MongoDB URI configured: ${process.env.MONGODB_URI ? 'Yes' : 'No (using localhost)'}`);
+  console.log(`Session secret configured: ${process.env.SESSION_SECRET ? 'Yes' : 'No (using fallback)'}`);
 });
